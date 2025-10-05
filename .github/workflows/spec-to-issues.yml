@@ -1,0 +1,54 @@
+name: Spec Kit to GitHub Issues
+
+on:
+  push:
+    paths:
+      - "specs/**/tasks.md"
+      - "specs/**/spec.md"
+      - "specs/**/plan.md"
+  workflow_dispatch:
+    inputs:
+      feature_dir:
+        description: "Feature directory (e.g., specs/001-feature-name)"
+        required: false
+        default: ""
+
+jobs:
+  sync-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyGitHub requests
+
+      - name: Sync Spec Kit to GitHub Issues
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.repository }}
+        run: |
+          python .github/scripts/sync-spec-to-issues.py ${{ github.event.inputs.feature_dir }}
+
+      - name: Update issue status on task completion
+        if: github.event_name == 'push'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO_NAME: ${{ github.repository }}
+        run: |
+          # Find changed feature directories
+          CHANGED_DIRS=$(git diff --name-only HEAD~1 | grep '^specs/' | cut -d'/' -f1-3 | sort | uniq)
+
+          for dir in $CHANGED_DIRS; do
+            if [ -f "$dir/tasks.md" ]; then
+              echo "Updating issues for $dir"
+              bash .github/scripts/update-github-issues.sh "$dir"
+            fi
+          done
